@@ -1,7 +1,18 @@
 """Unit tests for phone number hashing service."""
 
 import pytest
+from unittest.mock import patch, MagicMock
 from app.services.phone_hasher import PhoneHasher
+
+
+@pytest.fixture(autouse=True)
+def mock_settings():
+    """Mock settings with test phone hash salt for all tests."""
+    mock = MagicMock()
+    mock.phone_hash_salt = "test_salt_for_hashing_123"
+
+    with patch('app.services.phone_hasher.get_settings', return_value=mock):
+        yield mock
 
 
 class TestPhoneHasher:
