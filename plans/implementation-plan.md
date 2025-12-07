@@ -160,7 +160,12 @@ Tracks active survey sessions for each phone number.
 - `idx_updated_at` on `updated_at` - Cleanup old sessions
 
 **Constraints:**
-- `UNIQUE(phone_hash, survey_id)` where `completed_at IS NULL` - One active session per survey
+- ~~`UNIQUE(phone_hash, survey_id)` where `completed_at IS NULL`~~ - **REMOVED**: Multiple active sessions allowed per phone/survey to support trailhead use case where users can initiate new surveys via start words
+
+**Start Word Tracking:**
+- Start words (e.g., "TRAILHEAD", "START") are tracked as `SurveyResponse` records with `step_id = "__session_start__"`
+- This keeps all user input in one table and enables easy analytics: "Which start words are most popular?"
+- No additional column needed on `survey_sessions` table
 
 ---
 
@@ -210,6 +215,11 @@ survey:
   name: "Public Lands Advocacy Intake"
   description: "Collect supporter information for advocacy campaigns"
   version: "1.0.0"
+  start_words:  # Keywords that initiate a new survey session
+    - "START"
+    - "BEGIN"
+    - "TRAILHEAD"  # Custom start word for trailhead surveys
+    - "SURVEY"
 
 consent:
   step_id: consent_request
@@ -309,6 +319,26 @@ settings:
 - All `store_as` values are available in subsequent step templates
 - Use `{{ variable_name }}` syntax for interpolation
 - Context is stored in `survey_sessions.context` JSONB column
+
+### Start Word Analytics
+Start words are tracked as `SurveyResponse` records with a special `step_id`:
+```sql
+-- Which start words are most popular?
+SELECT stored_value as start_word, COUNT(*) as usage_count
+FROM survey_responses
+WHERE step_id = '__session_start__'
+GROUP BY stored_value
+ORDER BY usage_count DESC;
+
+-- Start word usage by survey
+SELECT sr.stored_value, ss.survey_id, COUNT(*) as count
+FROM survey_responses sr
+JOIN survey_sessions ss ON sr.session_id = ss.id
+WHERE sr.step_id = '__session_start__'
+GROUP BY sr.stored_value, ss.survey_id;
+```
+
+This design keeps all user input (start words + survey answers) in one table for consistent analytics.
 
 ---
 
@@ -919,6 +949,14 @@ class SurveyMetadata(BaseModel):
     name: str
     description: str
     version: str
+    start_words: List[str] = []  # Keywords that initiate survey (e.g., ["START", "TRAILHEAD"])
+
+    @validator('start_words')
+    def validate_start_words(cls, v):
+        """Ensure start words are uppercase and non-empty"""
+        if not v:
+            raise ValueError("At least one start word is required")
+        return [word.upper() for word in v]
 
 class Survey(BaseModel):
     survey: SurveyMetadata
@@ -1521,9 +1559,22 @@ curl http://localhost:8000/health
 **Details:**
 - Implement main Twilio webhook endpoint
 - Handle opt-out detection (STOP, UNSUBSCRIBE, etc.)
+- **Handle start word detection** (configurable per survey, e.g., "TRAILHEAD", "START")
+- **Abandon existing active sessions when start word detected** to ensure clean state
+- **Track start word as a SurveyResponse** with `step_id = "__session_start__"` (data tracking)
 - Retrieve or create survey session with pessimistic locking
 - Process message through survey engine
 - Return TwiML response
+
+**Start Word Handling Strategy:**
+1. Load survey definition to get configured `start_words` list
+2. Check if incoming message matches any start word (case-insensitive)
+3. If match:
+   - Mark any existing active sessions for that phone/survey as completed (abandoned)
+   - Create new session
+   - Create `SurveyResponse` record with `step_id = "__session_start__"` to track which start word was used
+   - Return consent message
+4. This ensures only one active session exists and tracks start word as data
 
 **Files:**
 - Create `/Users/tony/Dropbox/Projects/sms-survey/app/routes/webhook.py`
@@ -1533,11 +1584,14 @@ curl http://localhost:8000/health
 from fastapi import APIRouter, Depends, Form, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import select
+from datetime import datetime, timezone
 from app.models.database import get_db
 from app.models.session import SurveySession
+from app.models.response import SurveyResponse
 from app.models.optout import OptOut
 from app.schemas.twilio import TwilioWebhookRequest
 from app.services.survey_engine import SurveyEngine
+from app.services.survey_loader import get_survey_loader
 from app.services.twilio_client import TwilioClient
 from app.middleware.twilio_auth import verify_twilio_signature
 from app.config import get_settings
@@ -1546,8 +1600,11 @@ import logging
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# Common opt-out keywords
+# Common opt-out keywords (universal)
 OPT_OUT_KEYWORDS = {"STOP", "STOPALL", "UNSUBSCRIBE", "CANCEL", "END", "QUIT"}
+
+# Special step_id for start word tracking
+SESSION_START_STEP_ID = "__session_start__"
 
 @router.post("/webhook/sms", dependencies=[Depends(verify_twilio_signature)])
 async def handle_sms_webhook(
@@ -1585,22 +1642,32 @@ async def handle_sms_webhook(
         logger.info(f"Ignoring message from opted-out user: {PhoneHasher.truncate_for_logging(phone_hash)}")
         return Response(content=TwilioClient.create_empty_response(), media_type="application/xml")
 
-    # Get or create survey session with pessimistic locking
-    # Assuming default survey_id - in production, this might come from routing logic
+    # Determine survey_id (in production, this might come from routing logic or number mapping)
     survey_id = "example-survey"
 
-    session = db.query(SurveySession).filter(
-        SurveySession.phone_hash == phone_hash,
-        SurveySession.survey_id == survey_id,
-        SurveySession.completed_at == None
-    ).with_for_update().first()
+    # Load survey definition to check for start words
+    loader = get_survey_loader()
+    survey = loader.load_survey(survey_id)
 
-    if not session:
+    # Check if message is a start word (case-insensitive)
+    message_upper = message_body.upper()
+    is_start_word = message_upper in [word.upper() for word in survey.survey.start_words]
+
+    if is_start_word:
+        # User is initiating a new survey session
+        logger.info(f"Start word '{message_body}' detected for {PhoneHasher.truncate_for_logging(phone_hash)}")
+
+        # Abandon any existing active sessions (ensures clean state)
+        abandoned_count = db.query(SurveySession).filter(
+            SurveySession.phone_hash == phone_hash,
+            SurveySession.survey_id == survey_id,
+            SurveySession.completed_at == None
+        ).update({"completed_at": datetime.now(timezone.utc)})
+
+        if abandoned_count > 0:
+            logger.info(f"Abandoned {abandoned_count} active session(s) for new start")
+
         # Create new session
-        from app.services.survey_loader import get_survey_loader
-        loader = get_survey_loader()
-        survey = loader.load_survey(survey_id)
-
         session = SurveySession(
             phone_hash=phone_hash,
             survey_id=survey_id,
@@ -1610,14 +1677,39 @@ async def handle_sms_webhook(
             context={}
         )
         db.add(session)
-        db.flush()  # Get session ID
+        db.flush()  # Get session ID before creating response
 
-        # Send consent message
+        # Track start word as a response (data tracking)
+        start_word_response = SurveyResponse(
+            session_id=session.id,
+            step_id=SESSION_START_STEP_ID,  # Special step_id: "__session_start__"
+            response_text=message_body,      # What they actually typed
+            stored_value=message_body.upper(),  # Normalized start word
+            is_valid=True
+        )
+        db.add(start_word_response)
+        db.commit()
+
         response_text = survey.consent.text
-    else:
-        # Process message through engine
-        engine = SurveyEngine(db)
-        response_text, is_complete = engine.process_message(session, message_body)
+        logger.info(f"New session created via start word '{message_body}'")
+        return Response(content=TwilioClient.create_response(response_text), media_type="application/xml")
+
+    # Not a start word - retrieve existing session with pessimistic locking
+    session = db.query(SurveySession).filter(
+        SurveySession.phone_hash == phone_hash,
+        SurveySession.survey_id == survey_id,
+        SurveySession.completed_at == None
+    ).order_by(SurveySession.started_at.desc()).with_for_update().first()
+
+    if not session:
+        # No active session - prompt user to start
+        start_words_list = ", ".join(survey.survey.start_words)
+        response_text = f"Text {start_words_list} to begin a survey."
+        return Response(content=TwilioClient.create_response(response_text), media_type="application/xml")
+
+    # Process message through survey engine
+    engine = SurveyEngine(db)
+    response_text, is_complete = engine.process_message(session, message_body)
 
     db.commit()
 
