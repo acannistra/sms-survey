@@ -26,6 +26,7 @@ class Settings(BaseSettings):
         surveys_dir: Path to directory containing survey YAML files
         git_commit_sha: Git commit SHA for survey versioning
         secret_key: Secret key for cryptographic operations
+        phone_hash_salt: Salt for one-way phone number hashing
         allowed_origins: List of allowed CORS origins
     """
 
@@ -74,6 +75,9 @@ class Settings(BaseSettings):
     # Security Configuration
     secret_key: str = Field(
         description="Secret key for cryptographic operations"
+    )
+    phone_hash_salt: str = Field(
+        description="Salt for one-way phone number hashing (must be kept secret)"
     )
     allowed_origins: str = Field(
         default="http://localhost:3000,http://localhost:8000",
