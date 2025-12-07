@@ -5,12 +5,11 @@ of a user's progress through a survey, including consent, current step, and cont
 """
 
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Any
 
 from sqlalchemy import (
     Index,
     String,
-    Text,
     Integer,
     Boolean,
     DateTime,
@@ -186,7 +185,7 @@ class SurveySession(Base):
         """
         self.completed_at = datetime.now(timezone.utc)
 
-    def update_context(self, key: str, value: any) -> None:
+    def update_context(self, key: str, value: Any) -> None:
         """Update a single context variable.
 
         Args:
