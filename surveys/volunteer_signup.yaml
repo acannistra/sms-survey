@@ -1,0 +1,115 @@
+# Volunteer Signup Survey
+# Demonstrates: consent flow, mixed question types, conditional branching, templates
+
+metadata:
+  id: volunteer_signup
+  name: Trail Volunteer Signup
+  description: Collects volunteer interest and contact information for trail maintenance
+  version: 1.0.0
+  start_words:
+    - volunteer
+    - signup
+    - join
+
+consent:
+  step_id: consent
+  text: |
+    Thanks for your interest! We'd like to collect your contact info.
+
+    Reply YES to continue or NO to opt out.
+  accept_values:
+    - 'yes'
+    - 'y'
+    - 'sure'
+    - 'ok'
+    - 'okay'
+  decline_values:
+    - 'no'
+    - 'n'
+    - 'nope'
+  decline_message: No problem! Text VOLUNTEER anytime to start over.
+
+settings:
+  max_retry_attempts: 3
+  retry_exceeded_message: Too many invalid attempts. Let's move on.
+  timeout_hours: 24
+
+steps:
+  - id: consent
+    text: |
+      Thanks for your interest! We'd like to collect your contact info.
+
+      Reply YES to continue or NO to opt out.
+    type: choice
+    validation:
+      choices:
+        - display: "Yes"
+          value: "true"
+        - display: "No"
+          value: "false"
+    store_as: consent_given
+    next: ask_name
+
+  - id: ask_name
+    text: Great! What's your first name?
+    type: text
+    validation:
+      min_length: 2
+      max_length: 50
+    store_as: name
+    error_message: Please enter a valid name (2-50 characters).
+    next: ask_zip
+
+  - id: ask_zip
+    text: Thanks {{ name }}! What's your ZIP code?
+    type: regex
+    validation:
+      pattern: '^\d{5}$'
+    store_as: zip
+    error_message: Please enter a 5-digit ZIP code.
+    next: ask_volunteer
+
+  - id: ask_volunteer
+    text: Would you like to volunteer for trail maintenance?
+    type: choice
+    validation:
+      choices:
+        - display: "Yes"
+          value: "true"
+        - display: "No"
+          value: "false"
+    store_as: wants_volunteer
+    next_conditional:
+      - condition: wants_volunteer == 'true'
+        next: ask_email
+    next: ask_phone
+
+  - id: ask_email
+    text: Great! What's your email address?
+    type: regex
+    validation:
+      pattern: '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    store_as: email
+    error_message: Please enter a valid email address.
+    next: ask_phone
+
+  - id: ask_phone
+    text: What's your phone number? (10 digits)
+    type: regex
+    validation:
+      pattern: '^\d{10}$'
+    store_as: contact_phone
+    error_message: Please enter a 10-digit phone number.
+    next: completion
+
+  - id: completion
+    text: |
+      Thanks {{ name }}! We've recorded your information.
+      {% if wants_volunteer == 'true' %}
+      We'll email you at {{ email }} with volunteer opportunities.
+      {% else %}
+      We'll keep you updated on trail conditions.
+      {% endif %}
+
+      Text STOP anytime to unsubscribe.
+    type: terminal
