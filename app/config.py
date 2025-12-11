@@ -72,8 +72,7 @@ class Settings(BaseSettings):
         description="Git commit SHA for versioning"
     )
     default_survey_id: str = Field(
-        default="volunteer_signup",
-        description="Default survey ID to use for incoming SMS messages"
+        description="Default survey ID to use for incoming SMS messages (required)"
     )
 
     # Security Configuration

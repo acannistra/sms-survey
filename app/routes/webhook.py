@@ -61,6 +61,79 @@ async def parse_twilio_webhook(
     )
 
 
+def handle_optout_optin(
+    db: Session,
+    phone_hash: str,
+    truncated_hash: str,
+    body_lower: str,
+    original_body: str,
+    survey_id: str,
+    response: Response
+) -> Response | None:
+    """Handle opt-out and opt-in keywords.
+
+    Checks if the message contains opt-out keywords (STOP, etc.) or opt-in
+    keywords (START), and handles them appropriately.
+
+    Args:
+        db: Database session
+        phone_hash: Hashed phone number
+        truncated_hash: Truncated hash for logging
+        body_lower: Lowercase message body
+        original_body: Original message body
+        survey_id: Survey ID for welcome message
+        response: FastAPI Response object to modify
+
+    Returns:
+        Response object if opt-out/opt-in was handled, None otherwise
+    """
+    # Check for opt-out keywords
+    if body_lower in OPT_OUT_KEYWORDS:
+        logger.info(f"Opt-out keyword detected from {truncated_hash}: {body_lower}")
+
+        # Add to opt-out list
+        OptOut.add_optout(db, phone_hash, original_body)
+        db.commit()
+
+        # Return opt-out confirmation
+        twiml = TwilioClient.create_response(
+            "You have been unsubscribed from SMS notifications. "
+            "Text START to opt back in."
+        )
+        response.media_type = "application/xml"
+        response.body = twiml.encode()
+        return response
+
+    # Check if user has opted out
+    if OptOut.is_opted_out(db, phone_hash):
+        logger.info(f"Message from opted-out user {truncated_hash}")
+
+        # Check for opt-in keyword
+        if body_lower == "start":
+            # Remove from opt-out list
+            OptOut.remove_optout(db, phone_hash)
+            db.commit()
+            logger.info(f"User {truncated_hash} opted back in")
+
+            # Return welcome message
+            twiml = TwilioClient.create_response(
+                "Welcome back! You have opted back in to SMS notifications. "
+                f"Text {survey_id.upper().replace('_', ' ')} to start a survey."
+            )
+            response.media_type = "application/xml"
+            response.body = twiml.encode()
+            return response
+        else:
+            # User is opted out - send empty response
+            twiml = TwilioClient.create_empty_response()
+            response.media_type = "application/xml"
+            response.body = twiml.encode()
+            return response
+
+    # No opt-out/opt-in handling needed
+    return None
+
+
 @router.post("/api/webhook/sms")
 async def sms_webhook(
     response: Response,
@@ -106,58 +179,23 @@ async def sms_webhook(
     )
 
     try:
-        # Check for opt-out keywords
+        # Handle opt-out/opt-in keywords
         body_lower = webhook_request.Body.strip().lower()
-        if body_lower in OPT_OUT_KEYWORDS:
-            logger.info(f"Opt-out keyword detected from {truncated_hash}: {body_lower}")
+        optout_response = handle_optout_optin(
+            db, phone_hash, truncated_hash, body_lower,
+            webhook_request.Body, survey_id, response
+        )
+        if optout_response is not None:
+            return optout_response
 
-            # Add to opt-out list
-            OptOut.add_optout(db, phone_hash, webhook_request.Body)
-            db.commit()
-
-            # Return opt-out confirmation
-            twiml = TwilioClient.create_response(
-                "You have been unsubscribed from SMS notifications. "
-                "Text START to opt back in."
-            )
-            response.media_type = "application/xml"
-            response.body = twiml.encode()
-            return response
-
-        # Check if user has opted out
-        if OptOut.is_opted_out(db, phone_hash):
-            logger.info(f"Message from opted-out user {truncated_hash}")
-
-            # Check for opt-in keyword
-            if body_lower == "start":
-                # Remove from opt-out list
-                OptOut.remove_optout(db, phone_hash)
-                db.commit()
-                logger.info(f"User {truncated_hash} opted back in")
-
-                # Return welcome message
-                twiml = TwilioClient.create_response(
-                    "Welcome back! You have opted back in to SMS notifications. "
-                    f"Text {survey_id.upper().replace('_', ' ')} to start a survey."
-                )
-                response.media_type = "application/xml"
-                response.body = twiml.encode()
-                return response
-            else:
-                # User is opted out - send empty response
-                twiml = TwilioClient.create_empty_response()
-                response.media_type = "application/xml"
-                response.body = twiml.encode()
-                return response
-
-        # Load survey
+        # Load survey (cached by survey_loader for performance)
         survey_loader = get_survey_loader()
         try:
             survey = survey_loader.load_survey(survey_id)
         except SurveyNotFoundError:
             logger.error(f"Survey not found: {survey_id}")
             twiml = TwilioClient.create_response(
-                "Sorry, the survey is temporarily unavailable. Please try again later."
+                "Sorry, the survey is temporarily unavailable or closed. Thank you for your participation!"
             )
             response.media_type = "application/xml"
             response.body = twiml.encode()
@@ -173,7 +211,7 @@ async def sms_webhook(
             existing_sessions = db.query(SurveySession).filter(
                 SurveySession.phone_hash == phone_hash,
                 SurveySession.survey_id == survey_id,
-                SurveySession.completed_at == None
+                SurveySession.completed_at.is_(None)
             ).all()
 
             for session in existing_sessions:
@@ -205,16 +243,13 @@ async def sms_webhook(
         session = db.query(SurveySession).filter(
             SurveySession.phone_hash == phone_hash,
             SurveySession.survey_id == survey_id,
-            SurveySession.completed_at == None
+            SurveySession.completed_at.is_(None)
         ).with_for_update().first()
 
         if session is None:
-            # No active session - prompt user to start
-            logger.info(f"No active session for {truncated_hash}")
-            start_words_text = ", ".join(survey.metadata.start_words).upper()
-            twiml = TwilioClient.create_response(
-                f"Welcome! Text {start_words_text} to begin."
-            )
+            # No active session and not a start word - ignore message
+            logger.info(f"No active session for {truncated_hash}, ignoring message")
+            twiml = TwilioClient.create_empty_response()
             response.media_type = "application/xml"
             response.body = twiml.encode()
             return response
