@@ -1,0 +1,62 @@
+# Python cache and bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.json
+.tox/
+
+# Development and IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Git
+.git/
+.gitignore
+.github/
+
+# Environment and secrets
+.env
+.env.local
+.env.*.local
+
+# Documentation (development only)
+plans/
+PHASE0_COMPLETION.md
+QUICKSTART.md
+
+# Keep surveys/README.md as it's referenced in survey format docs
+# But exclude other markdown in root
+README.md
+CLAUDE.md
+
+# Alembic artifacts
+alembic/versions/*.pyc
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Logs
+*.log
+
+# Tests
+tests/
+test_*.py
