@@ -13,7 +13,7 @@ This guide covers deploying the SMS Survey Engine to Fly.io with PostgreSQL and 
 
 ```bash
 flyctl version
-# Should show version 0.x.x or higher
+# Should show version 0.0.200 or higher (required for features like auto_stop_machines and min_machines_running)
 
 flyctl auth login
 # Opens browser for authentication
@@ -60,7 +60,7 @@ This automatically sets the `DATABASE_URL` secret for your application.
 
 ### 3. Configure Secrets
 
-The application requires 7 secrets. Set them using `flyctl secrets set`:
+The application requires 7 secrets total, but only 6 need to be manually set (`DATABASE_URL` is auto-configured). Set them using `flyctl secrets set`:
 
 | Secret | Description | How to Generate |
 |--------|-------------|-----------------|
@@ -296,7 +296,7 @@ flyctl logs --app sms-survey-engine
 
 **Common causes:**
 
-1. **Missing secrets**: Check all 7 required secrets are set
+1. **Missing secrets**: Check all required secrets are set (6 manual + 1 auto-configured)
    ```bash
    flyctl secrets list --app sms-survey-engine
    ```
@@ -410,7 +410,7 @@ exit
 
 Before going live with real users:
 
-- [ ] All 7 secrets configured correctly
+- [ ] All secrets configured correctly (6 manual + DATABASE_URL auto-configured)
 - [ ] DATABASE_URL points to production Postgres cluster
 - [ ] PHONE_HASH_SALT is backed up securely (cannot recover if lost)
 - [ ] Twilio webhook URL configured and tested

@@ -1,6 +1,8 @@
 # Fly.io configuration for SMS Survey Engine
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 
+# IMPORTANT: The app name must be unique for each deployment/environment.
+# Change this value as needed (e.g., 'sms-survey-staging', 'sms-survey-prod').
 app = 'sms-survey-engine'
 primary_region = 'sjc'
 
