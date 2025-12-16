@@ -1,36 +1,40 @@
-# Start from a robust base image, e.g., a common Node or Python image
-# For simplicity, we'll use a basic Ubuntu image
+# Start from a robust base image
 FROM mcr.microsoft.com/devcontainers/base:ubuntu-22.04
 
-# [1] Install Twilio CLI
-# Uses the recommended 'apt' method for Debian/Ubuntu
-RUN sudo apt-get update && \
-    sudo apt-get install -y wget && \
-    wget -qO- https://twilio-cli-prod.s3.amazonaws.com/twilio_pub.asc | sudo apt-key add - && \
-    echo 'deb https://twilio-cli-prod.s3.amazonaws.com/apt/ /' | sudo tee /etc/apt/sources.list.d/twilio.list && \
-    sudo apt-get update && \
-    sudo apt-get install -y twilio && \
+# --- Ensure Network Utilities and Install Dependencies ---
+RUN apt-get update && \
+    # Install essential networking tools like curl, wget, and dnsutils (for debugging/stability)
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        curl \
+        wget \
+        dnsutils \
+        sudo && \
+    rm -rf /var/lib/apt/lists/*
+
+# [1] Install Twilio CLI (This section was stable)
+RUN apt-get update && \
+    # NOTE: apt-key is deprecated, but used here to stick close to official Twilio install guide
+    wget -qO- https://twilio-cli-prod.s3.amazonaws.com/twilio_pub.asc | apt-key add - && \
+    echo 'deb https://twilio-cli-prod.s3.amazonaws.com/apt/ /' | tee /etc/apt/sources.list.d/twilio.list && \
+    apt-get update && \
+    apt-get install -y twilio && \
     twilio version
 
-# [2] Install Flyctl - CORRECTED
-# Install script places binary in /root/.fly/bin/flyctl
-RUN curl -L https://install.fly.io | sh && \
-    # Add the installation directory to the PATH for the rest of this RUN command
-    export PATH="/root/.fly/bin:$PATH" && \
-    # Now run 'fly version' to confirm installation
-    fly version
-
-# Ensure flyctl is in a globally accessible path by symlinking it
-# This step is crucial for the default user ('vscode') to find the binary later
-RUN sudo ln -s /root/.fly/bin/fly /usr/local/bin/flyctl
+# [2] Install Flyctl (Using the correct script, but ensuring PATH visibility)
+RUN curl -L https://fly.io/install.sh | sh
+# Fix 1: Add the installation path to the global environment for the default user ('vscode')
+# The script installs to /root/.fly/bin/fly
+RUN export PATH="/root/.fly/bin:$PATH" && \
+    # Fix 2: Symlink the binary to a globally accessible directory
+    sudo ln -s /root/.fly/bin/fly /usr/local/bin/flyctl && \
+    flyctl version
 
 # [3] Install Claude Code
-# Uses the recommended curl/bash native install script
-# NOTE: The Claude installer might also require a path update, we'll keep it simple for now.
+# Uses the recommended curl/bash native install script, which places it in /root/.claude/bin
 RUN curl -fsSL https://claude.ai/install.sh | bash && \
+    # Add the installation directory to the PATH for the rest of this RUN command
+    export PATH="/root/.claude/bin:$PATH" && \
     claude version
-    
-# Set the default shell and user for the container
-# This is usually inherited from the base image but good to ensure
-# USER vscode
-# SHELL ["/bin/bash", "-c"]
+
+# Final step: Ensure Claude CLI is globally accessible
+RUN sudo ln -s /root/.claude/bin/claude /usr/local/bin/claude
