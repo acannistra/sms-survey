@@ -29,12 +29,11 @@ RUN export PATH="/root/.fly/bin:$PATH" && \
     sudo ln -s /root/.fly/bin/fly /usr/local/bin/flyctl && \
     flyctl version
 
-# [3] Install Claude Code
-# Uses the recommended curl/bash native install script, which places it in /root/.claude/bin
+# [3] Install Claude Code 
 RUN curl -fsSL https://claude.ai/install.sh | bash && \
-    # Add the installation directory to the PATH for the rest of this RUN command
-    export PATH="/root/.claude/bin:$PATH" && \
+    # FIX: Correct the PATH to reference /root/.local/bin
+    export PATH="/root/.local/bin:$PATH" && \
     claude version
 
 # Final step: Ensure Claude CLI is globally accessible
-RUN sudo ln -s /root/.claude/bin/claude /usr/local/bin/claude
+RUN sudo ln -s /root/.local/bin/claude /usr/local/bin/claude
