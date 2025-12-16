@@ -12,24 +12,24 @@ RUN sudo apt-get update && \
     sudo apt-get install -y twilio && \
     twilio version
 
-# [2] Install Flyctl
-# Uses the recommended curl/bash install script
-RUN curl -L https://fly.io/install.sh | sh && \
-    flyctl version
+# [2] Install Flyctl - CORRECTED
+# Install script places binary in /root/.fly/bin/flyctl
+RUN curl -L https://install.fly.io | sh && \
+    # Add the installation directory to the PATH for the rest of this RUN command
+    export PATH="/root/.fly/bin:$PATH" && \
+    # Now run 'fly version' to confirm installation
+    fly version
 
-# Ensure flyctl is in a globally accessible path.
-# The install script typically places it in $HOME/.fly/bin/
-# We symlink it for general user access.
-# NOTE: The flyctl installer should handle this, but it's a safeguard.
-RUN if [ -f /root/.fly/bin/fly ]; then \
-        sudo ln -s /root/.fly/bin/fly /usr/local/bin/fly; \
-    fi
+# Ensure flyctl is in a globally accessible path by symlinking it
+# This step is crucial for the default user ('vscode') to find the binary later
+RUN sudo ln -s /root/.fly/bin/fly /usr/local/bin/flyctl
 
 # [3] Install Claude Code
 # Uses the recommended curl/bash native install script
+# NOTE: The Claude installer might also require a path update, we'll keep it simple for now.
 RUN curl -fsSL https://claude.ai/install.sh | bash && \
     claude version
-
+    
 # Set the default shell and user for the container
 # This is usually inherited from the base image but good to ensure
 # USER vscode
