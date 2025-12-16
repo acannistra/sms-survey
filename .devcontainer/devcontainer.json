@@ -1,0 +1,30 @@
+{
+  "build": {
+    "dockerfile": "Dockerfile",
+    // Optionally, pass arguments to your Dockerfile build
+  },
+  
+  // Features to add common development tools (optional but helpful)
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {},
+    // Add other language support features if needed (e.g., Python, Node)
+    // "ghcr.io/devcontainers/features/node:1": {}
+  },
+
+  // VS Code extensions to install
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "anthropic.claude-code", // Official Claude Code extension
+        "Twilio.vscode-twilio",   // Official Twilio extension
+        "tamasfe.even-better-toml" // Recommended for fly.toml editing
+      ]
+    }
+  },
+
+  // Post-create command to ensure everything is executable (if needed)
+  // "postCreateCommand": "sudo chmod +x /usr/local/bin/claude",
+  
+  // Forward ports if your app uses them (e.g., for Fly.io testing)
+  "forwardPorts": [8080]
+}
