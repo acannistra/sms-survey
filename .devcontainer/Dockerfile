@@ -14,8 +14,8 @@ RUN sudo apt-get update && \
 
 # [2] Install Flyctl
 # Uses the recommended curl/bash install script
-RUN curl -L https://install.fly.io | sh && \
-    fly version
+RUN curl -L https://fly.io/install.sh | sh && \
+    flyctl version
 
 # Ensure flyctl is in a globally accessible path.
 # The install script typically places it in $HOME/.fly/bin/
