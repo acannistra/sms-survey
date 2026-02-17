@@ -114,3 +114,130 @@ def sample_survey_version() -> str:
         str: Git commit SHA
     """
     return "abc123def456"
+
+
+@pytest.fixture
+def test_client(db_session):
+    """Create FastAPI TestClient with database override.
+
+    Yields:
+        TestClient: FastAPI test client for API testing
+
+    Note:
+        Overrides the get_db dependency to use test database session.
+    """
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.models.database import get_db
+
+    def override_get_db():
+        try:
+            yield db_session
+        finally:
+            pass
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    client = TestClient(app)
+    yield client
+
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def test_phone_number() -> str:
+    """Provide a test phone number in E.164 format.
+
+    Returns:
+        str: Test phone number
+    """
+    return "+15551234567"
+
+
+@pytest.fixture
+def test_phone_hash(test_phone_number) -> str:
+    """Provide a hashed test phone number.
+
+    Args:
+        test_phone_number: Test phone number fixture
+
+    Returns:
+        str: 64-character hex hash of test phone number
+    """
+    from app.services.phone_hasher import PhoneHasher
+    return PhoneHasher.hash_phone(test_phone_number)
+
+
+@pytest.fixture
+def test_survey_fixture_path(tmp_path):
+    """Create a temporary test survey YAML file.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture
+
+    Returns:
+        Path: Path to test survey YAML file
+
+    Note:
+        Creates a minimal valid survey for testing.
+    """
+    survey_content = """
+metadata:
+  id: test_survey
+  name: Test Survey
+  description: A test survey
+  version: 1.0.0
+  start_words:
+    - test
+    - start
+
+consent:
+  step_id: consent
+  text: "Reply YES to continue or NO to opt out."
+  accept_values:
+    - 'yes'
+    - 'y'
+  decline_values:
+    - 'no'
+    - 'n'
+  decline_message: "Thanks anyway!"
+
+settings:
+  max_retry_attempts: 3
+  retry_exceeded_message: "Too many attempts."
+  timeout_hours: 24
+
+steps:
+  - id: consent
+    text: "Reply YES to continue or NO to opt out."
+    type: choice
+    validation:
+      choices:
+        - display: "Yes"
+          value: "true"
+        - display: "No"
+          value: "false"
+    store_as: consent_given
+    next: ask_name
+
+  - id: ask_name
+    text: "What's your name?"
+    type: text
+    validation:
+      min_length: 2
+      max_length: 50
+    store_as: name
+    error_message: "Please enter a valid name."
+    next: completion
+
+  - id: completion
+    text: "Thanks {{ name }}!"
+    type: terminal
+"""
+
+    survey_dir = tmp_path / "surveys"
+    survey_dir.mkdir()
+    survey_file = survey_dir / "test_survey.yaml"
+    survey_file.write_text(survey_content)
+
+    return survey_file
