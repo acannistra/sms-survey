@@ -20,6 +20,10 @@ os.environ.setdefault("PHONE_HASH_SALT", "test_salt_for_hashing_phones")
 os.environ.setdefault("ENVIRONMENT", "development")
 
 from app.models.database import Base
+# Import all models to ensure tables are registered
+from app.models.session import SurveySession
+from app.models.response import SurveyResponse
+from app.models.optout import OptOut
 
 
 @pytest.fixture(scope="function")
@@ -33,10 +37,11 @@ def db_engine():
         Uses SQLite in-memory database for fast, isolated tests.
         Database is created fresh for each test function.
     """
-    # Create in-memory SQLite database
+    # Create in-memory SQLite database with check_same_thread=False for TestClient
     engine = create_engine(
         "sqlite:///:memory:",
         echo=False,  # Set to True for SQL debugging
+        connect_args={"check_same_thread": False},
     )
 
     # Enable foreign key support for SQLite
@@ -117,31 +122,60 @@ def sample_survey_version() -> str:
 
 
 @pytest.fixture
-def test_client(db_session):
+def test_client(tmp_path):
     """Create FastAPI TestClient with database override.
 
     Yields:
         TestClient: FastAPI test client for API testing
 
     Note:
-        Overrides the get_db dependency to use test database session.
+        Uses a temporary file-based SQLite database to avoid in-memory
+        connection issues with TestClient's background tasks.
     """
+    import tempfile
+    from pathlib import Path
     from fastapi.testclient import TestClient
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
     from app.main import app
-    from app.models.database import get_db
+    from app.models import database as db_module
 
-    def override_get_db():
-        try:
-            yield db_session
-        finally:
-            pass
+    # Create temporary database file
+    db_file = tmp_path / "test.db"
+    test_db_url = f"sqlite:///{db_file}"
 
-    app.dependency_overrides[get_db] = override_get_db
+    # Create test engine
+    test_engine = create_engine(
+        test_db_url,
+        echo=False,
+        connect_args={"check_same_thread": False},
+    )
 
+    # Create all tables
+    Base.metadata.create_all(test_engine)
+
+    # Replace the module-level engine with our test engine
+    original_engine = db_module.engine
+    original_session_local = db_module.SessionLocal
+
+    db_module.engine = test_engine
+    db_module.SessionLocal = sessionmaker(
+        bind=test_engine,
+        autocommit=False,
+        autoflush=False,
+        expire_on_commit=False,
+    )
+
+    # Create test client
     client = TestClient(app)
     yield client
 
+    # Cleanup
+    client.close()
+    db_module.engine = original_engine
+    db_module.SessionLocal = original_session_local
     app.dependency_overrides.clear()
+    test_engine.dispose()
 
 
 @pytest.fixture
