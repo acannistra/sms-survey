@@ -89,14 +89,17 @@ class SurveyStep(BaseModel):
     next: Optional[str] = Field(None, description="Next step ID")
     next_conditional: Optional[list[ConditionalNext]] = Field(None, description="Conditional branching")
     error_message: Optional[str] = Field(None, description="Custom validation error message")
+    show_if: Optional[str] = Field(None, description="Python expression; step is skipped if false")
 
     @model_validator(mode='after')
     def validate_step_requirements(self):
         """Validate step-specific requirements based on type."""
-        # Terminal steps should not have next
+        # Terminal steps should not have next or show_if
         if self.type == QuestionType.TERMINAL:
             if self.next is not None or self.next_conditional is not None:
                 raise ValueError("Terminal steps cannot have 'next' or 'next_conditional'")
+            if self.show_if is not None:
+                raise ValueError("Terminal steps cannot have 'show_if' (no next step to skip to)")
 
         # Non-terminal steps must have next or next_conditional
         if self.type != QuestionType.TERMINAL:

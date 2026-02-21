@@ -104,6 +104,29 @@ Final step that ends the survey (no `next` field).
   type: terminal
 ```
 
+## Conditional Step Visibility (`show_if`)
+
+Use `show_if` on a step to skip it entirely when a condition is false. The step is never presented to the user; the engine silently follows its `next`/`next_conditional` to find the next visible step.
+
+```yaml
+- id: q6_pct_north
+  show_if: "start_word == 'common'"
+  text: "Q6: If the PCT North lot were plowed, would you have parked there? (Y / N)"
+  type: choice
+  # ...
+```
+
+`show_if` uses the same Python expression syntax as `next_conditional`. The context always includes:
+- `start_word` — lowercase trigger word the user texted (e.g. `'common'`, `'survey'`)
+- Any variable stored via `store_as` on prior steps
+
+Multi-value checks (note: `in` is not supported — use `or`):
+```yaml
+show_if: "start_word == 'common' or start_word == 'alpy'"
+```
+
+**Note:** Terminal steps cannot have `show_if`. If a skipped step has a `store_as` field, that variable will be absent from context — downstream expressions should not depend on it unconditionally.
+
 ## Conditional Branching
 
 Use `next_conditional` instead of `next` to branch based on previous answers:

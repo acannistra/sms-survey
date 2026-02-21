@@ -218,14 +218,14 @@ async def sms_webhook(
                 session.mark_completed()
                 logger.info(f"Abandoned existing session {session.id} for {truncated_hash}")
 
-            # Create new session
+            # Create new session, seeding start_word into context for show_if expressions
             new_session = SurveySession(
                 phone_hash=phone_hash,
                 survey_id=survey_id,
                 survey_version=settings.git_commit_sha,
                 current_step=survey.consent.step_id,
                 consent_given=False,
-                context={}
+                context={"start_word": body_lower}
             )
             db.add(new_session)
             db.commit()

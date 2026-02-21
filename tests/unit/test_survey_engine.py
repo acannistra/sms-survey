@@ -452,3 +452,180 @@ class TestSurveyEngine:
         engine.process_message(session, "12345")
         assert session.retry_count == 0
         assert session.current_step == "ask_volunteer"
+
+
+@pytest.mark.unit
+class TestShowIf:
+    """Tests for show_if conditional step visibility feature."""
+
+    # Test 16: show_if true — step is shown
+    def test_show_if_true_step_shown(self, db_session, test_phone_hash):
+        """Step with show_if evaluating true is presented normally."""
+        # At msg_optional, start_word='common' — q6_pct_north should be shown
+        session = SurveySession(
+            phone_hash=test_phone_hash,
+            survey_id="cba-snoq-25-26",
+            survey_version="test",
+            current_step="msg_optional",
+            consent_given=True,
+            context={"start_word": "common"}
+        )
+        db_session.add(session)
+        db_session.commit()
+        db_session.refresh(session)
+
+        engine = SurveyEngine(db_session)
+        response_text, is_completed = engine.process_message(session, "Y")
+
+        assert session.current_step == "q6_pct_north"
+        assert is_completed is False
+        assert "PCT North" in response_text
+
+    # Test 17: show_if false — step is skipped transparently
+    def test_show_if_false_step_skipped(self, db_session, test_phone_hash):
+        """Step with show_if evaluating false is skipped; next visible step is shown."""
+        # At msg_optional, start_word='survey' — q6_pct_north (show_if='common') should be skipped
+        session = SurveySession(
+            phone_hash=test_phone_hash,
+            survey_id="cba-snoq-25-26",
+            survey_version="test",
+            current_step="msg_optional",
+            consent_given=True,
+            context={"start_word": "survey"}
+        )
+        db_session.add(session)
+        db_session.commit()
+        db_session.refresh(session)
+
+        engine = SurveyEngine(db_session)
+        response_text, is_completed = engine.process_message(session, "Y")
+
+        # q6 skipped; should land on q7_safety_issues
+        assert session.current_step == "q7_safety_issues"
+        assert is_completed is False
+        assert "safety" in response_text.lower() or "crowding" in response_text.lower()
+
+    # Test 18: No show_if — step always shown
+    def test_no_show_if_always_shown(self, db_session, test_phone_hash):
+        """Step without show_if is always presented regardless of context."""
+        session = SurveySession(
+            phone_hash=test_phone_hash,
+            survey_id="cba-snoq-25-26",
+            survey_version="test",
+            current_step="q1_zip",
+            consent_given=True,
+            context={"start_word": "gold"}
+        )
+        db_session.add(session)
+        db_session.commit()
+        db_session.refresh(session)
+
+        engine = SurveyEngine(db_session)
+        response_text, is_completed = engine.process_message(session, "98045")
+
+        assert session.current_step == "q2_parking"
+        assert is_completed is False
+
+    # Test 19: show_if with undefined variable fails open (step is shown)
+    def test_show_if_undefined_variable_fails_open(self, db_session):
+        """show_if referencing an undefined context variable fails open — step is shown."""
+        from app.schemas.survey import SurveyStep, QuestionType, ValidationRules, ChoiceOption
+        from unittest.mock import MagicMock
+
+        engine = SurveyEngine(db_session)
+
+        step = SurveyStep(
+            id="test_step",
+            text="Test step",
+            type=QuestionType.CHOICE,
+            show_if="undefined_var == 'something'",  # variable not in context
+            validation=ValidationRules(choices=[ChoiceOption(display="Y", value="yes")]),
+            next="next_step"
+        )
+        next_step = SurveyStep(
+            id="next_step",
+            text="Next step",
+            type=QuestionType.TERMINAL
+        )
+
+        mock_survey = MagicMock()
+        engine.loader = MagicMock()
+        engine.loader.get_step.side_effect = lambda s, sid: {
+            "test_step": step, "next_step": next_step
+        }.get(sid)
+
+        # Should return the step itself (fail open), not skip to next_step
+        result = engine._advance_to_visible_step(mock_survey, "test_step", {})
+        assert result.id == "test_step"
+
+    # Test 20: _advance_to_visible_step direct — cycle detection
+    def test_advance_to_visible_step_cycle_detection(self, db_session):
+        """_advance_to_visible_step raises SurveyEngineError on step cycle."""
+        from app.schemas.survey import SurveyStep, QuestionType, ValidationRules, ChoiceOption
+        from unittest.mock import MagicMock
+
+        engine = SurveyEngine(db_session)
+
+        # Build two steps that form a cycle via show_if
+        step_a = SurveyStep(
+            id="step_a",
+            text="Step A",
+            type=QuestionType.CHOICE,
+            show_if="False",  # always skipped
+            validation=ValidationRules(choices=[ChoiceOption(display="Y", value="yes")]),
+            next="step_b"
+        )
+        step_b = SurveyStep(
+            id="step_b",
+            text="Step B",
+            type=QuestionType.CHOICE,
+            show_if="False",  # always skipped
+            validation=ValidationRules(choices=[ChoiceOption(display="Y", value="yes")]),
+            next="step_a"  # cycle back
+        )
+
+        mock_survey = MagicMock()
+        engine.loader = MagicMock()
+        engine.loader.get_step.side_effect = lambda survey, sid: {
+            "step_a": step_a, "step_b": step_b
+        }.get(sid)
+
+        with pytest.raises(SurveyEngineError, match="Infinite loop"):
+            engine._advance_to_visible_step(mock_survey, "step_a", {})
+
+    # Test 21: _advance_to_visible_step — step not found raises SurveyEngineError
+    def test_advance_to_visible_step_step_not_found(self, db_session):
+        """_advance_to_visible_step raises SurveyEngineError when step ID doesn't exist."""
+        from unittest.mock import MagicMock
+
+        engine = SurveyEngine(db_session)
+        mock_survey = MagicMock()
+        engine.loader = MagicMock()
+        engine.loader.get_step.return_value = None  # step not found
+
+        with pytest.raises(SurveyEngineError, match="Step not found"):
+            engine._advance_to_visible_step(mock_survey, "nonexistent_step", {})
+
+    # Test 22: retry-exceeded when next step is terminal marks session completed
+    def test_retry_exceeded_terminal_next_step(self, db_session, test_phone_hash):
+        """When max retries exceeded and next step is terminal, session is marked completed."""
+        session = SurveySession(
+            phone_hash=test_phone_hash,
+            survey_id="cba-snoq-25-26",
+            survey_version="test",
+            current_step="q12_pass_program",  # last question before end_full (terminal)
+            consent_given=True,
+            context={"start_word": "survey"},
+            retry_count=2  # one more invalid reply will exceed max_retry_attempts=3
+        )
+        db_session.add(session)
+        db_session.commit()
+        db_session.refresh(session)
+
+        engine = SurveyEngine(db_session)
+
+        # Third invalid reply triggers retry-exceeded path; next is end_full (terminal)
+        response_text, is_completed = engine.process_message(session, "invalid")
+
+        assert is_completed is True
+        assert session.completed_at is not None
