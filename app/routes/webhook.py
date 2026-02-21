@@ -5,7 +5,8 @@ survey sessions, processes user input, and generates TwiML responses.
 """
 
 from typing import Annotated
-from fastapi import APIRouter, Depends, Form, Response
+from fastapi import APIRouter, Depends, Form
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.models.database import get_db
@@ -61,6 +62,11 @@ async def parse_twilio_webhook(
     )
 
 
+def _xml_response(twiml: str) -> Response:
+    """Wrap a TwiML string in a 200 XML Response."""
+    return Response(content=twiml, media_type="application/xml", status_code=200)
+
+
 def handle_optout_optin(
     db: Session,
     phone_hash: str,
@@ -68,7 +74,6 @@ def handle_optout_optin(
     body_lower: str,
     original_body: str,
     survey_id: str,
-    response: Response
 ) -> Response | None:
     """Handle opt-out and opt-in keywords.
 
@@ -82,7 +87,6 @@ def handle_optout_optin(
         body_lower: Lowercase message body
         original_body: Original message body
         survey_id: Survey ID for welcome message
-        response: FastAPI Response object to modify
 
     Returns:
         Response object if opt-out/opt-in was handled, None otherwise
@@ -90,45 +94,28 @@ def handle_optout_optin(
     # Check for opt-out keywords
     if body_lower in OPT_OUT_KEYWORDS:
         logger.info(f"Opt-out keyword detected from {truncated_hash}: {body_lower}")
-
-        # Add to opt-out list
         OptOut.add_optout(db, phone_hash, original_body)
         db.commit()
-
-        # Return opt-out confirmation
-        twiml = TwilioClient.create_response(
+        return _xml_response(TwilioClient.create_response(
             "You have been unsubscribed from SMS notifications. "
             "Text START to opt back in."
-        )
-        response.media_type = "application/xml"
-        response.body = twiml.encode()
-        return response
+        ))
 
     # Check if user has opted out
     if OptOut.is_opted_out(db, phone_hash):
         logger.info(f"Message from opted-out user {truncated_hash}")
 
-        # Check for opt-in keyword
         if body_lower == "start":
-            # Remove from opt-out list
             OptOut.remove_optout(db, phone_hash)
             db.commit()
             logger.info(f"User {truncated_hash} opted back in")
-
-            # Return welcome message
-            twiml = TwilioClient.create_response(
+            return _xml_response(TwilioClient.create_response(
                 "Welcome back! You have opted back in to SMS notifications. "
                 f"Text {survey_id.upper().replace('_', ' ')} to start a survey."
-            )
-            response.media_type = "application/xml"
-            response.body = twiml.encode()
-            return response
+            ))
         else:
             # User is opted out - send empty response
-            twiml = TwilioClient.create_empty_response()
-            response.media_type = "application/xml"
-            response.body = twiml.encode()
-            return response
+            return _xml_response(TwilioClient.create_empty_response())
 
     # No opt-out/opt-in handling needed
     return None
@@ -136,7 +123,6 @@ def handle_optout_optin(
 
 @router.post("/api/webhook/sms")
 async def sms_webhook(
-    response: Response,
     webhook_request: Annotated[TwilioWebhookRequest, Depends(parse_twilio_webhook)],
     db: Session = Depends(get_db)
 ) -> Response:
@@ -155,7 +141,6 @@ async def sms_webhook(
     7. Return TwiML response
 
     Args:
-        response: FastAPI Response object for setting content type
         webhook_request: Validated Twilio webhook request
         db: Database session
 
@@ -183,7 +168,7 @@ async def sms_webhook(
         body_lower = webhook_request.Body.strip().lower()
         optout_response = handle_optout_optin(
             db, phone_hash, truncated_hash, body_lower,
-            webhook_request.Body, survey_id, response
+            webhook_request.Body, survey_id,
         )
         if optout_response is not None:
             return optout_response
@@ -194,12 +179,9 @@ async def sms_webhook(
             survey = survey_loader.load_survey(survey_id)
         except SurveyNotFoundError:
             logger.error(f"Survey not found: {survey_id}")
-            twiml = TwilioClient.create_response(
+            return _xml_response(TwilioClient.create_response(
                 "Sorry, the survey is temporarily unavailable or closed. Thank you for your participation!"
-            )
-            response.media_type = "application/xml"
-            response.body = twiml.encode()
-            return response
+            ))
 
         # Check for start words (case-insensitive)
         is_start_word = body_lower in [word.lower() for word in survey.metadata.start_words]
@@ -233,11 +215,7 @@ async def sms_webhook(
 
             logger.info(f"Created new session {new_session.id} for {truncated_hash}")
 
-            # Return consent message
-            twiml = TwilioClient.create_response(survey.consent.text)
-            response.media_type = "application/xml"
-            response.body = twiml.encode()
-            return response
+            return _xml_response(TwilioClient.create_response(survey.consent.text))
 
         # Retrieve active session with pessimistic locking
         session = db.query(SurveySession).filter(
@@ -247,12 +225,8 @@ async def sms_webhook(
         ).with_for_update().first()
 
         if session is None:
-            # No active session and not a start word - ignore message
             logger.info(f"No active session for {truncated_hash}, ignoring message")
-            twiml = TwilioClient.create_empty_response()
-            response.media_type = "application/xml"
-            response.body = twiml.encode()
-            return response
+            return _xml_response(TwilioClient.create_empty_response())
 
         # Process message through survey engine
         engine = SurveyEngine(db)
@@ -264,38 +238,26 @@ async def sms_webhook(
                 f"completed={is_completed}, step={session.current_step}"
             )
 
-            # Generate TwiML response
-            twiml = TwilioClient.create_response(response_text)
-            response.media_type = "application/xml"
-            response.body = twiml.encode()
-            return response
+            return _xml_response(TwilioClient.create_response(response_text))
 
         except SurveyEngineError as e:
             logger.error(f"Survey engine error for session {session.id}: {e}")
             db.rollback()
-
-            # Return error message
-            twiml = TwilioClient.create_response(
+            return _xml_response(TwilioClient.create_response(
                 "Sorry, there was an error processing your response. Please try again."
-            )
-            response.media_type = "application/xml"
-            response.body = twiml.encode()
-            return response
+            ))
 
     except Exception as e:
         logger.error(f"Unexpected error processing webhook: {e}", exc_info=True)
         db.rollback()
 
-        # Return generic error message
         try:
-            twiml = TwilioClient.create_response(
+            return _xml_response(TwilioClient.create_response(
                 "Sorry, an unexpected error occurred. Please try again later."
-            )
-            response.media_type = "application/xml"
-            response.body = twiml.encode()
+            ))
         except Exception:
-            # Fallback if TwiML generation fails
-            response.media_type = "application/xml"
-            response.body = b'<?xml version="1.0" encoding="UTF-8"?><Response />'
-
-        return response
+            return Response(
+                content=b'<?xml version="1.0" encoding="UTF-8"?><Response />',
+                media_type="application/xml",
+                status_code=200
+            )
