@@ -52,11 +52,20 @@ steps:
         - display: "No"
           value: "false"
     store_as: consent_given
+    next: q0_trailhead
+
+  # Q0: Trailhead (only for generic start words — no predefined trailhead context)
+  - id: q0_trailhead
+    show_if: "start_word in ['cba', 'survey']"
+    text: "What trailhead did you visit today?"
+    type: text
+    store_as: trailhead_name
+    error_message: "Please enter the trailhead you visited."
     next: q1_zip
 
   # Q1: Home ZIP code
   - id: q1_zip
-    text: "Q1: What is your home ZIP code? (5 digits)"
+    text: "What is your home ZIP code? (5 digits)"
     type: regex
     validation:
       pattern: '^\d{5}$'
@@ -66,7 +75,7 @@ steps:
 
   # Q2: Were you able to park at your intended trailhead?
   - id: q2_parking
-    text: "Q2: Were you able to park at your intended trailhead or access point today? (Y / N)"
+    text: "Were you able to park at your intended trailhead or access point today? (Y / N)"
     type: choice
     validation:
       choices:
@@ -83,7 +92,7 @@ steps:
 
   # Q2.A: How did you adjust? (only if couldn't park at trailhead)
   - id: q2a_adjust
-    text: "Q2: How did you adjust your plans today due to parking availability? Please describe."
+    text: "How did you adjust your plans today due to parking availability? Please describe."
     type: text
     store_as: parking_adjustment
     error_message: "Please describe how you adjusted your plans."
@@ -91,7 +100,7 @@ steps:
 
   # Q3: Mode of travel
   - id: q3_travel
-    text: "Q3: How did you travel here today?\n1: Drive Alone\n2: 2+ Carpool\n3: 3+ Carpool\n4: Other"
+    text: "How did you travel here today?\n1: Drive Alone\n2: 2+ Carpool\n3: 3+ Carpool\n4: Other"
     type: choice
     validation:
       choices:
@@ -110,19 +119,29 @@ steps:
         next: q3a_park_ride
       - condition: "travel_mode == 'carpool_3'"
         next: q3a_park_ride
+      - condition: "travel_mode == 'other'"
+        next: q3b_other_describe
     next: q4_parking_clear
 
   # Q3.A: Park-and-ride use (only for carpoolers)
   - id: q3a_park_ride
-    text: "Q3: Did you use a park and ride to facilitate your carpool today? If so, which?"
+    text: "Did you use a park and ride to facilitate your carpool today? If so, which?"
     type: text
     store_as: park_and_ride
     error_message: "Please describe your park and ride use, or reply 'No'."
     next: q4_parking_clear
 
+  # Q3.B: Describe other travel mode (only if "other" selected)
+  - id: q3b_other_describe
+    text: "Please describe how you traveled here today."
+    type: text
+    store_as: travel_mode_other
+    error_message: "Please describe how you traveled here."
+    next: q4_parking_clear
+
   # Q4: Were parking options and regulations clear?
   - id: q4_parking_clear
-    text: "Q4: Were the available parking options and regulations clear to you before you arrived today? (Y / N)"
+    text: "Were the available parking options and regulations clear to you before you arrived today? (Y / N)"
     type: choice
     validation:
       choices:
@@ -141,7 +160,7 @@ steps:
 
   # Q4.A: Information source (only if parking was clear)
   - id: q4a_info_source
-    text: "Q4: What source of information did you use to learn about parking options today?"
+    text: "What source of information did you use to learn about parking options today?"
     type: text
     store_as: parking_info_source
     error_message: "Please describe your information source."
@@ -149,7 +168,7 @@ steps:
 
   # Q4.B: Describe the issue (only if parking was not clear)
   - id: q4b_issue
-    text: "Q4: Please describe the parking information issue you experienced."
+    text: "Please describe the parking information issue you experienced."
     type: text
     store_as: parking_info_issue
     error_message: "Please describe the issue."
@@ -157,7 +176,7 @@ steps:
 
   # Q5: Did you park on roadside or shoulder?
   - id: q5_roadside
-    text: "Q5: Did you park on a roadside or shoulder today (rather than a designated parking lot)? (Y / N)"
+    text: "Did you park on a roadside or shoulder today (rather than a designated parking lot)? (Y / N)"
     type: choice
     validation:
       choices:
@@ -174,7 +193,7 @@ steps:
 
   # Q5.A: Safety rating for roadside walk (only if parked on roadside)
   - id: q5a_safety
-    text: "Q5: How safe did you feel walking between your parking spot and the trailhead?\n(1 = Very unsafe, 5 = Very safe)"
+    text: "How safe did you feel walking between your parking spot and the trailhead?\n(1 = Very unsafe, 5 = Very safe)"
     type: regex
     validation:
       pattern: '^[1-5]$'
@@ -209,7 +228,7 @@ steps:
   # Q6: Would you have used PCT North lot if plowed? (COMMON-specific)
   - id: q6_pct_north
     show_if: "start_word == 'common'"
-    text: "Q6: If the PCT North Trailhead parking lot were plowed, would you have parked there today? (Y / N)"
+    text: "If the PCT North Trailhead parking lot were plowed, would you have parked there today? (Y / N)"
     type: choice
     validation:
       choices:
@@ -223,7 +242,7 @@ steps:
 
   # Q7: Any safety or crowding issues?
   - id: q7_safety_issues
-    text: "Q7: On your trip, did you experience any safety or crowding issues? (Y / N)"
+    text: "On your trip, did you experience any safety or crowding issues? (Y / N)"
     type: choice
     validation:
       choices:
@@ -240,7 +259,7 @@ steps:
 
   # Q7.A: Describe safety/crowding issue (only if yes)
   - id: q7a_describe_issue
-    text: "Q7: Please describe the safety or crowding issue you experienced."
+    text: "Please describe the safety or crowding issue you experienced."
     type: text
     store_as: safety_issue_description
     error_message: "Please describe the issue."
@@ -248,7 +267,7 @@ steps:
 
   # Q9: First season?
   - id: q9_first_season
-    text: "Q9: Is this your first season backcountry/nordic skiing or snowshoeing? (Y / N)"
+    text: "Is this your first season backcountry/nordic skiing or snowshoeing? (Y / N)"
     type: choice
     validation:
       choices:
@@ -262,7 +281,7 @@ steps:
 
   # Q10: Would you use a bus from Issaquah Transit Center?
   - id: q10_bus
-    text: "Q10: Would you use a bus from the Issaquah Transit Center if available? (Y / N)"
+    text: "Would you use a bus from the Issaquah Transit Center to Snoqualmie Pass if available? (Y / N / Maybe)"
     type: choice
     validation:
       choices:
@@ -270,31 +289,32 @@ steps:
           value: "yes"
         - display: "N"
           value: "no"
+        - display: "Maybe"
+          value: "maybe"
     store_as: would_use_bus
-    error_message: "Please reply Y or N."
+    error_message: "Please reply Y, N, or Maybe."
     next: q11_parking_pass
 
-  # Q11: Willingness to pay for winter parking pass
+  # Q11: Willingness to purchase a winter parking pass (Y/N)
   - id: q11_parking_pass
-    text: "Q11: If available, would you purchase a winter parking pass for all Snoqualmie Pass lots?\n1: $5/day\n2: $25/day\n3: $60/day\n4: I wouldn't visit if there's a fee"
+    text: "If available, would you purchase a winter parking pass for all Snoqualmie Pass lots? (Y / N)"
     type: choice
     validation:
       choices:
-        - display: "1"
-          value: "5_per_day"
-        - display: "2"
-          value: "25_per_day"
-        - display: "3"
-          value: "60_per_day"
-        - display: "4"
-          value: "no_fee_no_visit"
-    store_as: parking_pass_preference
-    error_message: "Please reply 1, 2, 3, or 4."
-    next: q12_pass_program
+        - display: "Y"
+          value: "yes"
+        - display: "N"
+          value: "no"
+    store_as: wants_parking_pass
+    error_message: "Please reply Y or N."
+    next_conditional:
+      - condition: "wants_parking_pass == 'yes'"
+        next: q12_pass_program
+    next: end_full
 
-  # Q12: Parking pass program preference
+  # Q12: Parking pass format preference (only if wants_parking_pass == 'yes')
   - id: q12_pass_program
-    text: "Q12: Would you participate in a backcountry parking pass program?\n1: Yes, seasonal pass\n2: Yes, frequent-use (10-punch)\n3: No, prefer pay-per-visit\n4: No, wouldn't visit if payment required"
+    text: "What parking pass format would best suit your needs?\n1: Seasonal pass ($50–$100)\n2: Frequent-use punch card (5 or 10 visits)\n3: Pay per day ($25/day)\n4: Not willing to pay a fee"
     type: choice
     validation:
       choices:
@@ -303,7 +323,7 @@ steps:
         - display: "2"
           value: "frequent_use_pass"
         - display: "3"
-          value: "pay_per_visit"
+          value: "pay_per_day"
         - display: "4"
           value: "no_payment_no_visit"
     store_as: pass_program_preference
@@ -312,5 +332,5 @@ steps:
 
   # End of full survey (terminal)
   - id: end_full
-    text: "Thank you for completing the full survey! Your detailed feedback helps CBA improve trailhead access at Snoqualmie Pass. Text SURVEY to retake anytime."
+    text: "Thank you for completing the full survey! Your detailed feedback helps CBA improve trailhead access at Snoqualmie Pass. Text SURVEY to retake the next time you come back to Snoqualmie Pass."
     type: terminal
