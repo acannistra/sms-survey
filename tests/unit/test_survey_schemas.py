@@ -164,6 +164,16 @@ class TestSurveyStep:
                 next="another_step"
             )
 
+    def test_terminal_with_show_if_invalid(self):
+        """Test that terminal steps cannot have show_if."""
+        with pytest.raises(ValidationError):
+            SurveyStep(
+                id="completion",
+                text="Thank you!",
+                type=QuestionType.TERMINAL,
+                show_if="start_word == 'common'"
+            )
+
     def test_non_terminal_without_next_invalid(self):
         """Test that non-terminal steps must have next or next_conditional."""
         with pytest.raises(ValidationError):

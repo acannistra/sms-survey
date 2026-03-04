@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.models.session import SurveySession
 from app.models.response import SurveyResponse
-from app.schemas.survey import QuestionType, Survey
+from app.schemas.survey import QuestionType, Survey, SurveyStep
 from app.services.survey_loader import get_survey_loader, SurveyNotFoundError
 from app.services.validation import InputValidator, ValidationResult
 from app.services.template_renderer import get_template_renderer, TemplateRenderError
@@ -41,6 +41,57 @@ class SurveyEngine:
         self.db = db
         self.loader = get_survey_loader()
         self.renderer = get_template_renderer()
+
+    def _advance_to_visible_step(self, survey: Survey, step_id: str, context: dict) -> SurveyStep:
+        """Resolve to the first visible step starting from step_id, skipping steps whose show_if is false.
+
+        Follows next/next_conditional of skipped steps to find the next candidate,
+        repeating until a visible step is found. Terminal steps are never skipped.
+
+        Args:
+            survey: Survey definition
+            step_id: Starting step ID
+            context: Current survey context (includes start_word and prior answers)
+
+        Returns:
+            First SurveyStep that should be shown
+
+        Raises:
+            SurveyEngineError: If step not found or a skip cycle is detected
+        """
+        visited: set[str] = set()
+        current_id = step_id
+
+        while True:
+            if current_id in visited:
+                raise SurveyEngineError(f"Infinite loop detected in show_if skipping at step '{current_id}'")
+            visited.add(current_id)
+
+            step = self.loader.get_step(survey, current_id)
+            if step is None:
+                raise SurveyEngineError(f"Step not found: '{current_id}'")
+
+            # Terminal steps are always shown (they have no next to skip to)
+            if step.type == QuestionType.TERMINAL:
+                return step
+
+            # No condition — always show
+            if step.show_if is None:
+                return step
+
+            # Evaluate condition; on error, fail open (show the step)
+            try:
+                visible = BranchingService.evaluate_condition(step.show_if, context)
+            except BranchingError as e:
+                logger.warning(f"show_if evaluation failed for step '{current_id}': {e} — showing step")
+                return step
+
+            if visible:
+                return step
+
+            # Step is hidden — skip it by following its next/next_conditional
+            logger.debug(f"Skipping step '{current_id}' (show_if='{step.show_if}' is false)")
+            current_id = BranchingService.determine_next_step(step, context)
 
     def process_message(
         self,
@@ -109,13 +160,9 @@ class SurveyEngine:
                 session.update_context(current_step.store_as, validation_result.normalized_value)
                 logger.debug(f"Stored {current_step.store_as} = {validation_result.normalized_value}")
 
-            # Determine next step
+            # Determine next step, skipping any steps whose show_if is false
             next_step_id = BranchingService.determine_next_step(current_step, session.context)
-            next_step = self.loader.get_step(survey, next_step_id)
-
-            if next_step is None:
-                logger.error(f"Next step not found: {next_step_id}")
-                raise SurveyEngineError(f"Invalid next step: {next_step_id}")
+            next_step = self._advance_to_visible_step(survey, next_step_id, session.context)
 
             # Check if next step is terminal
             is_completed = (next_step.type == QuestionType.TERMINAL)
@@ -123,8 +170,8 @@ class SurveyEngine:
             # Render next step text
             response_text = self.renderer.render(next_step.text, session.context)
 
-            # Update session state
-            session.advance_step(next_step_id)
+            # Update session state (use next_step.id, which may differ from next_step_id if steps were skipped)
+            session.advance_step(next_step.id)
             if is_completed:
                 session.mark_completed()
 
@@ -178,12 +225,11 @@ class SurveyEngine:
                 )
             )
 
-            # Move to first real step
+            # Move to first real step, skipping any steps whose show_if is false
             consent_step = self.loader.get_step(survey, survey.consent.step_id)
-            next_step_id = consent_step.next
-            next_step = self.loader.get_step(survey, next_step_id)
+            next_step = self._advance_to_visible_step(survey, consent_step.next, session.context)
 
-            session.advance_step(next_step_id)
+            session.advance_step(next_step.id)
             response_text = self.renderer.render(next_step.text, session.context)
 
             self.db.commit()
@@ -257,12 +303,12 @@ class SurveyEngine:
             # Get current step
             current_step = self.loader.get_step(survey, session.current_step)
 
-            # Determine next step (skip current question)
+            # Determine next step, skipping any steps whose show_if is false
             next_step_id = BranchingService.determine_next_step(current_step, session.context)
-            next_step = self.loader.get_step(survey, next_step_id)
+            next_step = self._advance_to_visible_step(survey, next_step_id, session.context)
 
-            # Move to next step
-            session.advance_step(next_step_id)
+            # Move to next step (use next_step.id in case steps were skipped)
+            session.advance_step(next_step.id)
 
             # Check if terminal
             is_completed = (next_step.type == QuestionType.TERMINAL)

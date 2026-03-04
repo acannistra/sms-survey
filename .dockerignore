@@ -43,7 +43,6 @@ QUICKSTART.md
 
 # Keep surveys/README.md as it's referenced in survey format docs
 # But exclude other markdown in root
-README.md
 CLAUDE.md
 
 # Alembic artifacts

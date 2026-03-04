@@ -1,0 +1,336 @@
+# CBA Snoqualmie Trailhead Survey 2025-26
+# Surveys trailhead access, parking conditions, and user experience at Snoqualmie Pass
+
+metadata:
+  id: cba-snoq-25-26
+  name: CBA Snoqualmie Trailhead Survey 2025-26
+  description: Cascade Backcountry Alliance trailhead access and parking survey for Snoqualmie Pass
+  version: 1.0.0
+  start_words:
+    - survey
+    - alpy
+    - common
+    - gold
+    - cba
+    - snow
+
+consent:
+  step_id: consent
+  text: |
+    Thank you for participating in the CBA Trailhead Survey. We do not store your phone number.
+
+    By messaging this number you consent to receive survey messages from Cascade Backcountry Alliance. Consent is not a condition of service. Msg & data rates may apply. Reply STOP to opt-out. Reply HELP for help. Privacy Policy: https://cascadebackcountryalliance.com/privacy
+
+    Reply YES to begin or NO to opt out.
+  accept_values:
+    - 'yes'
+    - 'y'
+  decline_values:
+    - 'no'
+    - 'n'
+  decline_message: "No problem! Text SURVEY anytime to start again."
+
+settings:
+  max_retry_attempts: 3
+  retry_exceeded_message: "Too many invalid responses. Moving on."
+  timeout_hours: 48
+
+steps:
+  # Consent step — engine reads consent.accept_values/decline_values; next used on acceptance
+  - id: consent
+    text: |
+      Thank you for participating in the CBA Trailhead Survey. We do not store your phone number.
+
+      By messaging this number you consent to receive survey messages from Cascade Backcountry Alliance. Consent is not a condition of service. Msg & data rates may apply. Reply STOP to opt-out. Reply HELP for help. Privacy Policy: https://cascadebackcountryalliance.com/privacy
+
+      Reply YES to begin or NO to opt out.
+    type: choice
+    validation:
+      choices:
+        - display: "Yes"
+          value: "true"
+        - display: "No"
+          value: "false"
+    store_as: consent_given
+    next: q0_trailhead
+
+  # Q0: Trailhead (only for generic start words — no predefined trailhead context)
+  - id: q0_trailhead
+    show_if: "start_word in ['cba', 'survey']"
+    text: "What trailhead did you visit today?"
+    type: text
+    store_as: trailhead_name
+    error_message: "Please enter the trailhead you visited."
+    next: q1_zip
+
+  # Q1: Home ZIP code
+  - id: q1_zip
+    text: "What is your home ZIP code? (5 digits)"
+    type: regex
+    validation:
+      pattern: '^\d{5}$'
+    store_as: zip_code
+    error_message: "Please enter a valid 5-digit ZIP code (e.g. 98045)."
+    next: q2_parking
+
+  # Q2: Were you able to park at your intended trailhead?
+  - id: q2_parking
+    text: "Were you able to park at your intended trailhead or access point today? (Y / N)"
+    type: choice
+    validation:
+      choices:
+        - display: "Y"
+          value: "yes"
+        - display: "N"
+          value: "no"
+    store_as: parked_at_trailhead
+    error_message: "Please reply Y or N."
+    next_conditional:
+      - condition: "parked_at_trailhead == 'no'"
+        next: q2a_adjust
+    next: q3_travel
+
+  # Q2.A: How did you adjust? (only if couldn't park at trailhead)
+  - id: q2a_adjust
+    text: "How did you adjust your plans today due to parking availability? Please describe."
+    type: text
+    store_as: parking_adjustment
+    error_message: "Please describe how you adjusted your plans."
+    next: q3_travel
+
+  # Q3: Mode of travel
+  - id: q3_travel
+    text: "How did you travel here today?\n1: Drive Alone\n2: 2+ Carpool\n3: 3+ Carpool\n4: Other"
+    type: choice
+    validation:
+      choices:
+        - display: "1"
+          value: "drive_alone"
+        - display: "2"
+          value: "carpool_2"
+        - display: "3"
+          value: "carpool_3"
+        - display: "4"
+          value: "other"
+    store_as: travel_mode
+    error_message: "Please reply 1, 2, 3, or 4."
+    next_conditional:
+      - condition: "travel_mode == 'carpool_2'"
+        next: q3a_park_ride
+      - condition: "travel_mode == 'carpool_3'"
+        next: q3a_park_ride
+      - condition: "travel_mode == 'other'"
+        next: q3b_other_describe
+    next: q4_parking_clear
+
+  # Q3.A: Park-and-ride use (only for carpoolers)
+  - id: q3a_park_ride
+    text: "Did you use a park and ride to facilitate your carpool today? If so, which?"
+    type: text
+    store_as: park_and_ride
+    error_message: "Please describe your park and ride use, or reply 'No'."
+    next: q4_parking_clear
+
+  # Q3.B: Describe other travel mode (only if "other" selected)
+  - id: q3b_other_describe
+    text: "Please describe how you traveled here today."
+    type: text
+    store_as: travel_mode_other
+    error_message: "Please describe how you traveled here."
+    next: q4_parking_clear
+
+  # Q4: Were parking options and regulations clear?
+  - id: q4_parking_clear
+    text: "Were the available parking options and regulations clear to you before you arrived today? (Y / N)"
+    type: choice
+    validation:
+      choices:
+        - display: "Y"
+          value: "yes"
+        - display: "N"
+          value: "no"
+    store_as: parking_clear
+    error_message: "Please reply Y or N."
+    next_conditional:
+      - condition: "parking_clear == 'yes'"
+        next: q4a_info_source
+      - condition: "parking_clear == 'no'"
+        next: q4b_issue
+    next: q5_roadside
+
+  # Q4.A: Information source (only if parking was clear)
+  - id: q4a_info_source
+    text: "What source of information did you use to learn about parking options today?"
+    type: text
+    store_as: parking_info_source
+    error_message: "Please describe your information source."
+    next: q5_roadside
+
+  # Q4.B: Describe the issue (only if parking was not clear)
+  - id: q4b_issue
+    text: "Please describe the parking information issue you experienced."
+    type: text
+    store_as: parking_info_issue
+    error_message: "Please describe the issue."
+    next: q5_roadside
+
+  # Q5: Did you park on roadside or shoulder?
+  - id: q5_roadside
+    text: "Did you park on a roadside or shoulder today (rather than a designated parking lot)? (Y / N)"
+    type: choice
+    validation:
+      choices:
+        - display: "Y"
+          value: "yes"
+        - display: "N"
+          value: "no"
+    store_as: roadside_parking
+    error_message: "Please reply Y or N."
+    next_conditional:
+      - condition: "roadside_parking == 'yes'"
+        next: q5a_safety
+    next: msg_optional
+
+  # Q5.A: Safety rating for roadside walk (only if parked on roadside)
+  - id: q5a_safety
+    text: "How safe did you feel walking between your parking spot and the trailhead?\n(1 = Very unsafe, 5 = Very safe)"
+    type: regex
+    validation:
+      pattern: '^[1-5]$'
+    store_as: roadside_safety_rating
+    error_message: "Please reply with a number from 1 (very unsafe) to 5 (very safe)."
+    next: msg_optional
+
+  # MSG: End of short survey + optional questions prompt
+  - id: msg_optional
+    text: "Thank you for sharing! Your responses are confidential; we don't store your #. We have a few more optional questions – would you like to answer those? (Y / N)"
+    type: choice
+    validation:
+      choices:
+        - display: "Y"
+          value: "yes"
+        - display: "N"
+          value: "no"
+    store_as: wants_optional
+    error_message: "Please reply Y or N."
+    next_conditional:
+      - condition: "wants_optional == 'yes'"
+        next: q6_pct_north
+    next: end_short
+
+  # End of short survey (terminal)
+  - id: end_short
+    text: "Thank you for completing the survey! Your feedback helps CBA improve trailhead access at Snoqualmie Pass. Text SURVEY to retake anytime."
+    type: terminal
+
+  # --- Optional questions ---
+
+  # Q6: Would you have used PCT North lot if plowed? (COMMON-specific)
+  - id: q6_pct_north
+    show_if: "start_word == 'common'"
+    text: "If the PCT North Trailhead parking lot were plowed, would you have parked there today? (Y / N)"
+    type: choice
+    validation:
+      choices:
+        - display: "Y"
+          value: "yes"
+        - display: "N"
+          value: "no"
+    store_as: would_use_pct_north
+    error_message: "Please reply Y or N."
+    next: q7_safety_issues
+
+  # Q7: Any safety or crowding issues?
+  - id: q7_safety_issues
+    text: "On your trip, did you experience any safety or crowding issues? (Y / N)"
+    type: choice
+    validation:
+      choices:
+        - display: "Y"
+          value: "yes"
+        - display: "N"
+          value: "no"
+    store_as: had_safety_issues
+    error_message: "Please reply Y or N."
+    next_conditional:
+      - condition: "had_safety_issues == 'yes'"
+        next: q7a_describe_issue
+    next: q9_first_season
+
+  # Q7.A: Describe safety/crowding issue (only if yes)
+  - id: q7a_describe_issue
+    text: "Please describe the safety or crowding issue you experienced."
+    type: text
+    store_as: safety_issue_description
+    error_message: "Please describe the issue."
+    next: q9_first_season
+
+  # Q9: First season?
+  - id: q9_first_season
+    text: "Is this your first season backcountry/nordic skiing or snowshoeing? (Y / N)"
+    type: choice
+    validation:
+      choices:
+        - display: "Y"
+          value: "yes"
+        - display: "N"
+          value: "no"
+    store_as: first_season
+    error_message: "Please reply Y or N."
+    next: q10_bus
+
+  # Q10: Would you use a bus from Issaquah Transit Center?
+  - id: q10_bus
+    text: "Would you use a bus from the Issaquah Transit Center to Snoqualmie Pass if available? (Y / N / Maybe)"
+    type: choice
+    validation:
+      choices:
+        - display: "Y"
+          value: "yes"
+        - display: "N"
+          value: "no"
+        - display: "Maybe"
+          value: "maybe"
+    store_as: would_use_bus
+    error_message: "Please reply Y, N, or Maybe."
+    next: q11_parking_pass
+
+  # Q11: Willingness to purchase a winter parking pass (Y/N)
+  - id: q11_parking_pass
+    text: "If available, would you purchase a winter parking pass for all Snoqualmie Pass lots? (Y / N)"
+    type: choice
+    validation:
+      choices:
+        - display: "Y"
+          value: "yes"
+        - display: "N"
+          value: "no"
+    store_as: wants_parking_pass
+    error_message: "Please reply Y or N."
+    next_conditional:
+      - condition: "wants_parking_pass == 'yes'"
+        next: q12_pass_program
+    next: end_full
+
+  # Q12: Parking pass format preference (only if wants_parking_pass == 'yes')
+  - id: q12_pass_program
+    text: "What parking pass format would best suit your needs?\n1: Seasonal pass ($50–$100)\n2: Frequent-use punch card (5 or 10 visits)\n3: Pay per day ($25/day)\n4: Not willing to pay a fee"
+    type: choice
+    validation:
+      choices:
+        - display: "1"
+          value: "seasonal_pass"
+        - display: "2"
+          value: "frequent_use_pass"
+        - display: "3"
+          value: "pay_per_day"
+        - display: "4"
+          value: "no_payment_no_visit"
+    store_as: pass_program_preference
+    error_message: "Please reply 1, 2, 3, or 4."
+    next: end_full
+
+  # End of full survey (terminal)
+  - id: end_full
+    text: "Thank you for completing the full survey! Your detailed feedback helps CBA improve trailhead access at Snoqualmie Pass. Text SURVEY to retake the next time you come back to Snoqualmie Pass."
+    type: terminal

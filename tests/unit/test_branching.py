@@ -137,6 +137,13 @@ class TestBranchingService:
                 {}
             )
 
+    def test_key_error_in_simple_eval_raises_branching_error(self):
+        """Test that a KeyError from simpleeval is caught and re-raised as BranchingError."""
+        from unittest.mock import patch
+        with patch('app.services.branching.simple_eval', side_effect=KeyError('missing_key')):
+            with pytest.raises(BranchingError, match="Undefined variable"):
+                BranchingService.evaluate_condition("some_condition", {})
+
     def test_invalid_expression_raises_error(self):
         """Test that invalid expressions raise BranchingError."""
         with pytest.raises(BranchingError):
