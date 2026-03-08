@@ -96,8 +96,10 @@ def get_survey_stats(
 
     consents_given = base_q.filter(SurveySession.consent_given.is_(True)).count()
 
+    # consent_given must be True — declining consent also sets completed_at
     sessions_completed = base_q.filter(
-        SurveySession.completed_at.isnot(None)
+        SurveySession.consent_given.is_(True),
+        SurveySession.completed_at.isnot(None),
     ).count()
 
     unique_participants = (

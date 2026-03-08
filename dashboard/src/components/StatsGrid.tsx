@@ -33,7 +33,7 @@ export function StatsGrid({ stats }: StatsGridProps) {
       <StatCard title="Active (last 48h)" value={stats.active_last_48h} />
       <StatCard title="Opt-outs (global)" value={stats.opt_outs} />
       <StatCard
-        title="Avg Completion %"
+        title="Completion Rate"
         value={`${stats.avg_completion_pct.toFixed(1)}%`}
       />
     </div>
