@@ -9,12 +9,13 @@ import { FunnelChart } from '@/components/FunnelChart'
 import { StartWordTable } from '@/components/StartWordTable'
 import { ExportPanel } from '@/components/ExportPanel'
 import { LastUpdated } from '@/components/LastUpdated'
+import { DateRangePicker } from '@/components/DateRangePicker'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 
 export function DashboardPage() {
   const [selectedSurveyId, setSelectedSurveyId] = useState<string | null>(null)
-  const [startDate] = useState<Date>(defaultStartDate)
-  const [endDate] = useState<Date>(defaultEndDate)
+  const [startDate, setStartDate] = useState<Date | null>(defaultStartDate())
+  const [endDate, setEndDate] = useState<Date | null>(defaultEndDate())
   const lastUpdatedAt = useRef<Date | null>(null)
 
   const { data: surveyList, isLoading: surveysLoading } = useSurveys()
@@ -42,6 +43,11 @@ export function DashboardPage() {
     void refetchFunnel()
   }
 
+  function handleDateRangeChange(start: Date | null, end: Date | null) {
+    setStartDate(start)
+    setEndDate(end)
+  }
+
   return (
     <div className="min-h-screen bg-slate-50">
       {/* Header */}
@@ -57,21 +63,28 @@ export function DashboardPage() {
       </header>
 
       <main className="mx-auto max-w-7xl px-6 py-8 space-y-8">
-        {/* Survey selector */}
-        <div className="flex items-center justify-between flex-wrap gap-4">
-          <SurveySelectorBar
-            surveys={surveyList?.surveys ?? []}
-            selectedId={selectedSurveyId}
-            onChange={setSelectedSurveyId}
-            isLoading={surveysLoading}
-          />
-          {selectedSurveyId && (
-            <ExportPanel
-              surveyId={selectedSurveyId}
-              startDate={startDate}
-              endDate={endDate}
+        {/* Survey selector + date range */}
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <SurveySelectorBar
+              surveys={surveyList?.surveys ?? []}
+              selectedId={selectedSurveyId}
+              onChange={setSelectedSurveyId}
+              isLoading={surveysLoading}
             />
-          )}
+            {selectedSurveyId && (
+              <ExportPanel
+                surveyId={selectedSurveyId}
+                startDate={startDate}
+                endDate={endDate}
+              />
+            )}
+          </div>
+          <DateRangePicker
+            startDate={startDate}
+            endDate={endDate}
+            onChange={handleDateRangeChange}
+          />
         </div>
 
         {!selectedSurveyId && (
