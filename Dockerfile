@@ -1,5 +1,13 @@
 # Multi-stage build for SMS Survey Engine
-# Stage 1: Builder - Install dependencies and build wheels
+# Stage 1: Node builder — compile React + Vite dashboard
+FROM node:20-slim AS node-builder
+WORKDIR /dashboard
+COPY dashboard/package.json dashboard/package-lock.json ./
+RUN npm ci
+COPY dashboard/ ./
+RUN npm run build
+
+# Stage 2: Python builder — install dependencies and build wheels
 FROM python:3.11-slim AS builder
 
 # Install build dependencies for psycopg2-binary and other compiled packages
@@ -23,7 +31,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 RUN pip install --no-cache-dir -U pip setuptools wheel && \
     pip install --no-cache-dir -e .
 
-# Stage 2: Runtime - Minimal image with only runtime dependencies
+# Stage 3: Runtime — minimal image with only runtime dependencies
 FROM python:3.11-slim
 
 # Install only runtime dependencies (PostgreSQL client library)
@@ -46,6 +54,9 @@ COPY app/ ./app/
 COPY surveys/ ./surveys/
 COPY alembic/ ./alembic/
 COPY alembic.ini ./
+
+# Copy compiled dashboard from Node builder
+COPY --from=node-builder /dashboard/dist ./dashboard/dist
 
 # Set ownership to non-root user
 RUN chown -R appuser:appuser /app

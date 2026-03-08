@@ -5,14 +5,17 @@ registers routers, and handles global exception handling.
 """
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import AsyncGenerator
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
 from app.logging_config import setup_logging, get_logger
 from app.routes import health, webhook
+from app.routes import dashboard
 
 # Initialize logger (will be configured during startup)
 logger = get_logger(__name__)
@@ -85,6 +88,17 @@ async def root() -> dict:
 # Register routers
 app.include_router(health.router, tags=["Health"])
 app.include_router(webhook.router, tags=["Webhook"])
+app.include_router(dashboard.router)
+
+# Mount dashboard static files AFTER all router registrations.
+# StaticFiles(html=True) is required for React Router client-side navigation.
+_dashboard_dist = Path(__file__).parent.parent / "dashboard" / "dist"
+if _dashboard_dist.exists():
+    app.mount(
+        "/dashboard",
+        StaticFiles(directory=str(_dashboard_dist), html=True),
+        name="dashboard",
+    )
 
 
 # Global exception handler
