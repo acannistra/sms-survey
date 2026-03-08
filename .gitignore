@@ -98,3 +98,7 @@ alembic/versions/*.pyc
 tmp/
 temp/
 *.tmp
+
+# Dashboard
+dashboard/node_modules/
+dashboard/dist/
